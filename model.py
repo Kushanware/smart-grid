@@ -1,20 +1,18 @@
 
-"""Training and inference helpers for smart-meter pattern detection.
+"""Training and inference helpers for smart-meter anomaly detection.
 
-Trains a simple classifier to label readings as normal/theft/fault using
-features produced by preprocess.preprocess.
+Uses Isolation Forest to detect anomalies without labeled theft data.
+Learns normal usage patterns and identifies rare/different points.
 """
 
 import argparse
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Iterable, Optional
 
 import joblib
 import pandas as pd
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
-from sklearn.model_selection import train_test_split
+from sklearn.ensemble import IsolationForest
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -38,14 +36,11 @@ def load_data(path: Path) -> pd.DataFrame:
 	return df
 
 
-def build_dataset(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+def build_dataset(df: pd.DataFrame) -> pd.DataFrame:
+	"""Prepare features for unsupervised anomaly detection."""
 	processed = preprocess(df)
-	if "pattern" not in processed.columns:
-		raise ValueError("pattern column required to train classifier")
-	labeled = processed.dropna(subset=["pattern"])
-	X = labeled[FEATURE_COLS + CAT_COLS]
-	y = labeled["pattern"].astype("category")
-	return X, y
+	X = processed[FEATURE_COLS + CAT_COLS].dropna()
+	return X
 
 
 def make_pipeline() -> Pipeline:
@@ -71,12 +66,14 @@ def make_pipeline() -> Pipeline:
 		]
 	)
 
-	clf = RandomForestClassifier(
-		n_estimators=150,
-		max_depth=None,
-		min_samples_leaf=2,
+	# Isolation Forest: learns normal patterns, finds rare/different points
+	# contamination: expected proportion of anomalies (5% default)
+	# n_estimators: number of isolation trees
+	clf = IsolationForest(
+		n_estimators=100,
+		contamination=0.05,
+		max_samples='auto',
 		n_jobs=-1,
-		class_weight="balanced",
 		random_state=42,
 	)
 
@@ -89,17 +86,28 @@ def make_pipeline() -> Pipeline:
 
 
 def train_model(df: pd.DataFrame):
-	X, y = build_dataset(df)
-	X_train, X_test, y_train, y_test = train_test_split(
-		X, y, test_size=0.2, stratify=y, random_state=42
-	)
-
+	"""Train Isolation Forest on normal usage patterns (unsupervised)."""
+	X = build_dataset(df)
+	
 	pipe = make_pipeline()
-	pipe.fit(X_train, y_train)
-
-	y_pred = pipe.predict(X_test)
-	report = classification_report(y_test, y_pred, digits=3)
-	return pipe, report
+	pipe.fit(X)
+	
+	# Get predictions and scores for summary
+	predictions = pipe.predict(X)
+	scores = pipe.decision_function(X)
+	
+	n_normal = (predictions == 1).sum()
+	n_anomaly = (predictions == -1).sum()
+	
+	summary = f"""
+Training complete:
+- Total samples: {len(X)}
+- Normal (1): {n_normal} ({n_normal/len(X)*100:.1f}%)
+- Anomaly (-1): {n_anomaly} ({n_anomaly/len(X)*100:.1f}%)
+- Anomaly score range: [{scores.min():.3f}, {scores.max():.3f}]
+"""
+	
+	return pipe, summary
 
 
 def save_model(model: Pipeline, path: Path) -> None:
@@ -112,18 +120,34 @@ def load_model(path: Path) -> Pipeline:
 
 
 def predict(model: Pipeline, rows: Iterable[dict]) -> pd.DataFrame:
+	"""Predict anomalies and compute anomaly scores.
+	
+	Returns:
+		DataFrame with:
+		- prediction: 1 (Normal) or -1 (Anomaly)
+		- anomaly_score: How strange/rare the reading is (lower = more anomalous)
+	"""
 	df = pd.DataFrame(rows)
 	processed = preprocess(df)
 	X = processed[FEATURE_COLS + CAT_COLS]
-	preds = model.predict(X)
-	processed["predicted_pattern"] = preds
+	
+	# Predict: 1 = Normal, -1 = Anomaly
+	predictions = model.predict(X)
+	
+	# Anomaly score: negative values indicate anomalies
+	# Lower score = more anomalous
+	scores = model.decision_function(X)
+	
+	processed["prediction"] = predictions
+	processed["anomaly_score"] = scores
+	
 	return processed
 
 
 def parse_args() -> argparse.Namespace:
-	parser = argparse.ArgumentParser(description="Train smart-meter pattern classifier")
-	parser.add_argument("--data", type=str, default="data/live_data.csv", help="CSV with pattern labels")
-	parser.add_argument("--model-out", type=str, default="artifacts/pattern_model.joblib", help="Where to store trained model")
+	parser = argparse.ArgumentParser(description="Train Isolation Forest for anomaly detection")
+	parser.add_argument("--data", type=str, default="data/live_data.csv", help="CSV with meter readings")
+	parser.add_argument("--model-out", type=str, default="artifacts/anomaly_model.joblib", help="Where to store trained model")
 	return parser.parse_args()
 
 
@@ -133,11 +157,10 @@ def main() -> None:
 	model_out = Path(args.model_out)
 
 	df = load_data(data_path)
-	model, report = train_model(df)
+	model, summary = train_model(df)
 	save_model(model, model_out)
 	print("Model saved to", model_out)
-	print("\nEvaluation:\n")
-	print(report)
+	print(summary)
 
 
 if __name__ == "__main__":
