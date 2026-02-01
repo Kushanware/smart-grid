@@ -6,7 +6,6 @@ Displays:
 - Meter table with alerts
 - Auto-refresh for live monitoring
 - User authentication and admin panel
-- Email alert notifications
 """
 
 from pathlib import Path
@@ -16,10 +15,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from auth import authenticate_user, register_user, list_all_users, delete_user, update_user_role, change_password, update_user_email, toggle_user_alerts, get_user_info
+from auth import authenticate_user, register_user, list_all_users, delete_user, update_user_role, change_password
 from decision_engine import run_engine
 from report_generator import generate_pdf_report
-from email_service import load_email_config, save_email_config, test_email_connection, send_alert_email, send_daily_summary
 
 
 @st.cache_data(show_spinner=False, ttl=60)
@@ -228,174 +226,6 @@ def admin_panel():
 		st.info("Authentication system is active with 3 default user levels: viewer, operator, admin")
 
 
-def settings_page():
-	"""User settings and email configuration page"""
-	st.set_page_config(page_title="Smart Grid - Settings", layout="wide", page_icon="⚡")
-	st.title("⚙️ Settings")
-	
-	settings_tab1, settings_tab2, settings_tab3 = st.tabs(["Profile", "Email Notifications", "Admin Email Config"])
-	
-	with settings_tab1:
-		st.subheader("👤 Your Profile")
-		username = st.session_state.get("username")
-		user_info = get_user_info(username)
-		
-		if user_info:
-			col1, col2 = st.columns(2)
-			with col1:
-				st.write(f"**Username:** {username}")
-				st.write(f"**Name:** {user_info.get('name', 'N/A')}")
-			with col2:
-				st.write(f"**Role:** {user_info.get('role', 'N/A').upper()}")
-				st.write(f"**Email:** {user_info.get('email', 'Not set')}")
-			
-			st.divider()
-			
-			st.subheader("✉️ Update Email Address")
-			new_email = st.text_input("New Email Address", value=user_info.get('email', ''), key="profile_email")
-			if st.button("Save Email", type="primary", use_container_width=True):
-				if new_email:
-					success, message = update_user_email(username, new_email)
-					if success:
-						st.success(message)
-						st.rerun()
-					else:
-						st.error(message)
-				else:
-					st.error("Please enter an email address")
-			
-			st.divider()
-			st.subheader("🔑 Change Password")
-			old_pass = st.text_input("Current Password", type="password", key="old_pass")
-			new_pass = st.text_input("New Password", type="password", key="new_pass")
-			confirm_pass = st.text_input("Confirm New Password", type="password", key="confirm_pass")
-			
-			if st.button("Change Password", type="primary", use_container_width=True):
-				if not old_pass or not new_pass or not confirm_pass:
-					st.error("Please fill all password fields")
-				elif new_pass != confirm_pass:
-					st.error("New passwords do not match")
-				else:
-					success, message = change_password(username, old_pass, new_pass)
-					if success:
-						st.success(message)
-					else:
-						st.error(message)
-	
-	with settings_tab2:
-		st.subheader("🔔 Email Alert Settings")
-		username = st.session_state.get("username")
-		user_info = get_user_info(username)
-		current_alerts = user_info.get('alerts_enabled', False) if user_info else False
-		
-		col1, col2 = st.columns([3, 1])
-		with col1:
-			st.write("Receive email alerts when anomalies are detected")
-		with col2:
-			if current_alerts:
-				if st.button("🔔 Disable Alerts", use_container_width=True, type="secondary"):
-					toggle_user_alerts(username)
-					st.rerun()
-			else:
-				if st.button("🔕 Enable Alerts", use_container_width=True, type="primary"):
-					toggle_user_alerts(username)
-					st.rerun()
-		
-		st.divider()
-		st.info(f"Current status: **{'✓ ENABLED' if current_alerts else '✗ DISABLED'}**")
-		
-		if user_info and user_info.get('email'):
-			st.write(f"**Alert emails will be sent to:** {user_info.get('email')}")
-		else:
-			st.warning("Please set your email address in the Profile tab to receive alerts")
-	
-	with settings_tab3:
-		# Admin only email configuration
-		if st.session_state.get("role") != "admin":
-			st.error("This section is only available for administrators")
-			return
-		
-		st.subheader("📧 Email Server Configuration")
-		st.write("Configure SMTP settings for email notifications")
-		
-		email_config = load_email_config()
-		
-		col1, col2 = st.columns(2)
-		with col1:
-			smtp_server = st.text_input("SMTP Server", value=email_config.get("smtp_server", "smtp.gmail.com"))
-			smtp_port = st.number_input("SMTP Port", value=email_config.get("smtp_port", 587), min_value=1, max_value=65535)
-		with col2:
-			sender_email = st.text_input("Sender Email", value=email_config.get("sender_email", ""), help="Your email address")
-			sender_password = st.text_input("Email Password/App Password", value=email_config.get("sender_password", ""), type="password", help="Gmail: Use App Password, not regular password")
-		
-		use_tls = st.checkbox("Use TLS", value=email_config.get("use_tls", True))
-		enabled = st.checkbox("Enable Email Notifications", value=email_config.get("enabled", False))
-		
-		col1, col2, col3 = st.columns(3)
-		with col1:
-			if st.button("Test Connection", use_container_width=True, type="secondary"):
-				if not sender_email or not sender_password:
-					st.error("Please enter email and password")
-				else:
-					with st.spinner("Testing email connection..."):
-						success, message = test_email_connection(sender_email, sender_password, smtp_server, smtp_port)
-						if success:
-							st.success(message)
-						else:
-							st.error(message)
-		
-		with col2:
-			if st.button("Send Test Email", use_container_width=True, type="secondary"):
-				if not enabled:
-					st.error("Email notifications are disabled")
-				elif not sender_email:
-					st.error("Please configure sender email")
-				else:
-					test_email = st.session_state.get("email_test", sender_email)
-					with st.spinner("Sending test email..."):
-						success, message = send_alert_email(
-							test_email,
-							{
-								"meter_id": "TEST-001",
-								"pattern": "TEST",
-								"timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
-								"risk_score": 0.85,
-								"power": 125.5,
-								"voltage": 230.0,
-								"current": 15.3,
-								"explanation": "This is a test alert email from Smart Grid Monitoring System"
-							}
-						)
-						if success:
-							st.success(message)
-						else:
-							st.error(message)
-		
-		with col3:
-			if st.button("Save Configuration", use_container_width=True, type="primary"):
-				config = {
-					"enabled": enabled,
-					"smtp_server": smtp_server,
-					"smtp_port": smtp_port,
-					"sender_email": sender_email,
-					"sender_password": sender_password,
-					"use_tls": use_tls
-				}
-				save_email_config(config)
-				st.success("✓ Email configuration saved!")
-		
-		st.divider()
-		
-		st.info("""
-		**Gmail Setup Instructions:**
-		1. Go to myaccount.google.com/security
-		2. Enable 2-Step Verification
-		3. Generate App Password for "Mail" and "Windows"
-		4. Use the generated 16-character password above
-		5. SMTP: smtp.gmail.com, Port: 587
-		""")
-
-
 def dashboard_page() -> None:
 	st.set_page_config(page_title="Smart Grid Dashboard", layout="wide", page_icon="⚡")
 	st.markdown(
@@ -456,7 +286,7 @@ def dashboard_page() -> None:
 		st.write(f"🎯 Role: `{st.session_state.get('role').upper()}`")
 		st.divider()
 	
-	page = st.sidebar.radio("Page", options=["Dashboard", "Settings", "About"], index=0)
+	page = st.sidebar.radio("Page", options=["Dashboard", "About"], index=0)
 	
 	col1, col2 = st.columns([4, 1])
 	with col1:
@@ -472,10 +302,6 @@ def dashboard_page() -> None:
 			except Exception:
 				pass
 
-	if page == "Settings":
-		settings_page()
-		return
-	
 	if page == "About":
 		st.subheader("System overview")
 		st.markdown(
@@ -500,10 +326,9 @@ def dashboard_page() -> None:
 7. **Mutation-ready design**: Handles missing data or model changes gracefully.
 8. **False positive reduction**: Uses historical behavior and balancing checks.
 9. **User Authentication**: Secure login with role-based access control.
-10. **Email Alerts**: Automated email notifications for critical events.
 
 **One-line product description**
-AI-powered smart grid monitoring software that detects energy theft, meter faults, and distribution losses in real time with explainable alerts, user authentication, and email notifications.
+AI-powered smart grid monitoring software that detects energy theft, meter faults, and distribution losses in real time with explainable alerts and user authentication.
 """
 		)
 		return
