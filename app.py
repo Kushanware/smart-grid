@@ -113,6 +113,57 @@ def show_alerts_table(filtered: pd.DataFrame) -> None:
 
 def main() -> None:
 	st.set_page_config(page_title="Smart Grid Dashboard", layout="wide", page_icon="⚡")
+	st.markdown(
+		"""
+<style>
+	:root {
+		--primary: #6C5CE7;
+		--secondary: #00D2D3;
+		--accent: #FF6B6B;
+		--accent-2: #FDCB6E;
+		--bg: #0F1222;
+		--card: #171A2B;
+		--text: #EAEAF2;
+		--muted: #AAB0C0;
+	}
+	.stApp {
+		background: radial-gradient(1200px circle at 10% 10%, #1B1F3A 0%, var(--bg) 45%, #0B0E1A 100%);
+		color: var(--text);
+	}
+	.stMarkdown, .stText, .stCaption { color: var(--text) !important; }
+	[data-testid="stSidebar"] {
+		background: linear-gradient(180deg, #141832 0%, #0F1222 100%);
+		border-right: 1px solid rgba(108, 92, 231, 0.25);
+	}
+	[data-testid="stMetric"] {
+		background: linear-gradient(135deg, rgba(108, 92, 231, 0.15), rgba(0, 210, 211, 0.15));
+		border: 1px solid rgba(108, 92, 231, 0.35);
+		border-radius: 14px;
+		padding: 12px;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+	}
+	div[data-testid="stMetricValue"] { color: var(--accent-2) !important; }
+	div[data-testid="stMetricDelta"] { color: var(--secondary) !important; }
+	[data-testid="stDataFrame"] {
+		border: 1px solid rgba(0, 210, 211, 0.35);
+		border-radius: 12px;
+		overflow: hidden;
+	}
+	.stButton>button {
+		background: linear-gradient(135deg, var(--primary), var(--secondary));
+		color: white;
+		border: none;
+		border-radius: 10px;
+		padding: 0.5rem 1.1rem;
+		box-shadow: 0 6px 20px rgba(108, 92, 231, 0.35);
+	}
+	.stButton>button:hover {
+		filter: brightness(1.08);
+	}
+</style>
+""",
+		unsafe_allow_html=True,
+	)
 	page = st.sidebar.radio("Page", options=["Dashboard", "About"], index=0)
 	col1, col2 = st.columns([4, 1])
 	with col1:
