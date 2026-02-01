@@ -113,6 +113,7 @@ def show_alerts_table(filtered: pd.DataFrame) -> None:
 
 def main() -> None:
 	st.set_page_config(page_title="Smart Grid Dashboard", layout="wide", page_icon="⚡")
+	page = st.sidebar.radio("Page", options=["Dashboard", "About"], index=0)
 	col1, col2 = st.columns([4, 1])
 	with col1:
 		st.title("⚡ Smart Grid Dashboard")
@@ -127,7 +128,8 @@ def main() -> None:
 			except Exception:
 				pass
 
-	with st.expander("ℹ️ About this system", expanded=False):
+	if page == "About":
+		st.subheader("System overview")
 		st.markdown(
 			"""
 **Smart Energy Theft & Loss Detection Software**
@@ -154,6 +156,7 @@ def main() -> None:
 AI-powered smart grid monitoring software that detects energy theft, meter faults, and distribution losses in real time with explainable alerts.
 """
 		)
+		return
 
 	base_dir = Path(__file__).parent
 	data_path = str(base_dir / "data" / "live_data.csv")

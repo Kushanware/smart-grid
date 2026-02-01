@@ -142,7 +142,7 @@ def generate_batch(
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Simulate live smart-meter readings with electrical fields.")
-	parser.add_argument("--meters", type=str, default="MTR-001,MTR-002,MTR-003", help="Comma-separated meter IDs")
+	parser.add_argument("--meters", type=str, default="MTR-001,MTR-002,MTR-003,MTR-004,MTR-005,MTR-006,MTR-007,MTR-008,MTR-009,MTR-010", help="Comma-separated meter IDs")
 	parser.add_argument("--output", type=str, default="data/live_data.csv", help="Output CSV path")
 	parser.add_argument("--transformer-output", type=str, default="data/transformer_live.csv", help="Transformer aggregate CSV path")
 	parser.add_argument("--transformer-id", type=str, default="TX-001", help="Transformer identifier")
